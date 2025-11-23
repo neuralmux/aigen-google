@@ -235,4 +235,135 @@ RSpec.describe Aigen::Google::Chat do
       expect(chat_with_context.history.length).to eq(4)
     end
   end
+
+  describe "#send_message_stream" do
+    let(:chat) { client.start_chat }
+
+    context "with block given" do
+      it "yields progressive chunks to the block" do
+        chunks = [
+          {candidates: [{content: {parts: [{text: "Hello"}], role: "model"}}]},
+          {candidates: [{content: {parts: [{text: " there"}], role: "model"}}]},
+          {candidates: [{content: {parts: [{text: "!"}], role: "model"}}]}
+        ]
+        chunk_data = chunks.map { |c| "#{c.to_json}\n" }.join
+
+        stub_request(:post, "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:streamGenerateContent")
+          .to_return(status: 200, body: chunk_data)
+
+        received_texts = []
+        chat.send_message_stream("Hi") do |chunk|
+          received_texts << chunk["candidates"][0]["content"]["parts"][0]["text"]
+        end
+
+        expect(received_texts).to eq(["Hello", " there", "!"])
+      end
+
+      it "updates history with full accumulated response after streaming completes" do
+        chunks = [
+          {candidates: [{content: {parts: [{text: "Hello"}], role: "model"}}]},
+          {candidates: [{content: {parts: [{text: " world"}], role: "model"}}]}
+        ]
+        chunk_data = chunks.map { |c| "#{c.to_json}\n" }.join
+
+        stub_request(:post, "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:streamGenerateContent")
+          .to_return(status: 200, body: chunk_data)
+
+        expect(chat.history.length).to eq(0)
+
+        chat.send_message_stream("Hi") { |chunk| }
+
+        expect(chat.history.length).to eq(2)
+        expect(chat.history[0][:role]).to eq("user")
+        expect(chat.history[0][:parts][0][:text]).to eq("Hi")
+        expect(chat.history[1][:role]).to eq("model")
+        expect(chat.history[1][:parts][0]["text"]).to eq("Hello world")
+      end
+
+      it "maintains conversation context across multiple streaming messages" do
+        # First streaming message
+        chunks1 = [
+          {candidates: [{content: {parts: [{text: "Hello"}], role: "model"}}]}
+        ]
+        stub_request(:post, "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:streamGenerateContent")
+          .with(body: hash_including({
+            contents: array_including(
+              hash_including({"role" => "user", "parts" => [{"text" => "Hi"}]})
+            )
+          }))
+          .to_return(status: 200, body: chunks1.map { |c| "#{c.to_json}\n" }.join)
+
+        chat.send_message_stream("Hi") { |chunk| }
+
+        # Second streaming message should include first in history
+        chunks2 = [
+          {candidates: [{content: {parts: [{text: "Good"}], role: "model"}}]}
+        ]
+        stub_request(:post, "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:streamGenerateContent")
+          .with(body: hash_including({
+            contents: array_including(
+              hash_including({"role" => "user", "parts" => [{"text" => "Hi"}]}),
+              hash_including({"role" => "model", "parts" => [{"text" => "Hello"}]}),
+              hash_including({"role" => "user", "parts" => [{"text" => "How are you?"}]})
+            )
+          }))
+          .to_return(status: 200, body: chunks2.map { |c| "#{c.to_json}\n" }.join)
+
+        chat.send_message_stream("How are you?") { |chunk| }
+
+        expect(chat.history.length).to eq(4)
+      end
+
+      it "returns nil when block is given" do
+        chunk_data = "{\"candidates\": [{\"content\": {\"parts\": [{\"text\": \"Hi\"}]}}]}\n"
+
+        stub_request(:post, "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:streamGenerateContent")
+          .to_return(status: 200, body: chunk_data)
+
+        result = chat.send_message_stream("Test") { |chunk| }
+        expect(result).to be_nil
+      end
+
+      it "validates message parameter" do
+        expect {
+          chat.send_message_stream(nil) { |chunk| }
+        }.to raise_error(ArgumentError, "message cannot be nil")
+
+        expect {
+          chat.send_message_stream("") { |chunk| }
+        }.to raise_error(ArgumentError, "message cannot be empty")
+      end
+    end
+
+    context "without block (Enumerator)" do
+      it "returns an Enumerator" do
+        chunk_data = "{\"candidates\": [{\"content\": {\"parts\": [{\"text\": \"Hi\"}]}}]}\n"
+
+        stub_request(:post, "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:streamGenerateContent")
+          .to_return(status: 200, body: chunk_data)
+
+        result = chat.send_message_stream("Test")
+        expect(result).to be_a(Enumerator)
+      end
+
+      it "updates history after enumerator is consumed" do
+        chunks = [
+          {candidates: [{content: {parts: [{text: "One"}], role: "model"}}]},
+          {candidates: [{content: {parts: [{text: "Two"}], role: "model"}}]}
+        ]
+        chunk_data = chunks.map { |c| "#{c.to_json}\n" }.join
+
+        stub_request(:post, "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:streamGenerateContent")
+          .to_return(status: 200, body: chunk_data)
+
+        enum = chat.send_message_stream("Test")
+        expect(chat.history.length).to eq(0)
+
+        enum.to_a
+
+        expect(chat.history.length).to eq(2)
+        expect(chat.history[1][:parts][0]["text"]).to eq("OneTwo")
+      end
+    end
+  end
 end

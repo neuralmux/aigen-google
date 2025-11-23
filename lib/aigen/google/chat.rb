@@ -112,6 +112,94 @@ module Aigen
         response
       end
 
+      # Sends a message in the chat context with streaming response delivery.
+      # Automatically includes conversation history for context and updates history
+      # with the full accumulated response after streaming completes.
+      #
+      # @param message [String] the message text to send
+      # @param options [Hash] additional options to pass to the API (e.g., generationConfig)
+      # @yieldparam chunk [Hash] parsed JSON chunk from the streaming response (if block given)
+      #
+      # @return [nil] if block is given, returns nil after streaming completes
+      # @return [Enumerator] if no block given, returns lazy Enumerator for progressive iteration
+      #
+      # @raise [Aigen::Google::AuthenticationError] if API key is invalid
+      # @raise [Aigen::Google::InvalidRequestError] if the request is malformed
+      # @raise [Aigen::Google::RateLimitError] if rate limit is exceeded
+      # @raise [Aigen::Google::ServerError] if the API returns a server error
+      # @raise [Aigen::Google::TimeoutError] if the request times out
+      # @raise [ArgumentError] if message is nil or empty
+      #
+      # @note The conversation history is NOT updated until the entire stream completes.
+      #   This ensures the history remains consistent even if streaming is interrupted.
+      #
+      # @example Stream chat response with block
+      #   chat = client.start_chat
+      #   chat.send_message_stream("Tell me a joke") do |chunk|
+      #     text = chunk["candidates"][0]["content"]["parts"][0]["text"]
+      #     print text
+      #   end
+      #   # History now contains both user message and full accumulated response
+      #
+      # @example Stream with Enumerator for lazy processing
+      #   chat = client.start_chat
+      #   stream = chat.send_message_stream("Count to 5")
+      #   stream.each { |chunk| puts chunk["candidates"][0]["content"]["parts"][0]["text"] }
+      #   puts chat.history.length # => 2 (user + model)
+      def send_message_stream(message, **options, &block)
+        # Validate message parameter
+        raise ArgumentError, "message cannot be nil" if message.nil?
+        raise ArgumentError, "message cannot be empty" if message.respond_to?(:empty?) && message.empty?
+
+        # Build user message part
+        user_message = {
+          role: "user",
+          parts: [{text: message}]
+        }
+
+        # Build payload with full history + new message
+        payload = {
+          contents: @history + [user_message]
+        }
+
+        # Merge any additional generation config options
+        payload.merge!(options) if options.any?
+
+        # Make API request
+        endpoint = "models/#{@model}:streamGenerateContent"
+
+        # Accumulate full response text while streaming
+        accumulated_text = ""
+
+        # If block given, stream with block and accumulate
+        if block_given?
+          @client.http_client.post_stream(endpoint, payload) do |chunk|
+            # Extract text from chunk
+            text = extract_chunk_text(chunk)
+            accumulated_text += text if text
+
+            # Yield chunk to user's block
+            block.call(chunk)
+          end
+
+          # After streaming completes, update history with full response
+          update_history_after_stream(user_message, accumulated_text)
+          nil
+        else
+          # Return Enumerator that accumulates and updates history when consumed
+          Enumerator.new do |yielder|
+            @client.http_client.post_stream(endpoint, payload) do |chunk|
+              text = extract_chunk_text(chunk)
+              accumulated_text += text if text
+              yielder << chunk
+            end
+
+            # Update history after enumeration completes
+            update_history_after_stream(user_message, accumulated_text)
+          end
+        end
+      end
+
       private
 
       def extract_model_message(response)
@@ -125,6 +213,22 @@ module Aigen
           role: content["role"] || "model",
           parts: content["parts"] || [{text: ""}]
         }
+      end
+
+      def extract_chunk_text(chunk)
+        chunk.dig("candidates", 0, "content", "parts", 0, "text")
+      end
+
+      def update_history_after_stream(user_message, accumulated_text)
+        # Add user message to history
+        @history << user_message
+
+        # Add accumulated model response to history (using symbol keys like non-streaming)
+        model_response = {
+          role: "model",
+          parts: [{"text" => accumulated_text}]
+        }
+        @history << model_response
       end
     end
   end

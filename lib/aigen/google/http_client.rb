@@ -42,6 +42,62 @@ module Aigen
         end
       end
 
+      # Makes a streaming POST request to the Gemini API.
+      # Processes chunked responses and yields each parsed chunk to the provided block.
+      #
+      # @param path [String] the API endpoint path
+      # @param payload [Hash] the request payload (will be JSON encoded)
+      # @yieldparam chunk [Hash] parsed JSON chunk from the streaming response
+      #
+      # @return [nil] always returns nil when block is given
+      #
+      # @raise [ArgumentError] if no block is provided
+      # @raise [Aigen::Google::AuthenticationError] if API key is invalid (401/403)
+      # @raise [Aigen::Google::InvalidRequestError] if request is malformed (400/404)
+      # @raise [Aigen::Google::RateLimitError] if rate limit is exceeded (429)
+      # @raise [Aigen::Google::ServerError] if server error occurs (500+) or network error
+      #
+      # @example Stream generated content chunks
+      #   http_client.post_stream("models/gemini-pro:streamGenerateContent", payload) do |chunk|
+      #     text = chunk["candidates"][0]["content"]["parts"][0]["text"]
+      #     print text
+      #   end
+      def post_stream(path, payload, &block)
+        raise ArgumentError, "block required for streaming" unless block_given?
+
+        buffer = ""
+
+        response = connection.post(path) do |req|
+          req.headers["Content-Type"] = "application/json"
+          req.headers["x-goog-api-key"] = @api_key
+          req.body = payload.to_json
+
+          req.options.on_data = proc do |chunk, _total_bytes|
+            buffer += chunk
+
+            # Process complete lines (newline-delimited JSON)
+            while (newline_index = buffer.index("\n"))
+              line = buffer.slice!(0, newline_index + 1).strip
+              next if line.empty?
+
+              begin
+                parsed_chunk = JSON.parse(line)
+                block.call(parsed_chunk)
+              rescue JSON::ParserError => e
+                raise ServerError.new("Invalid JSON in stream chunk: #{e.message}", status_code: nil)
+              end
+            end
+          end
+        end
+
+        # Check for non-200 status codes
+        handle_stream_response_status(response)
+
+        nil
+      rescue Faraday::Error => e
+        raise ServerError.new("Network error during streaming: #{e.message}", status_code: nil)
+      end
+
       private
 
       def connection
@@ -92,6 +148,25 @@ module Aigen
         body.dig("error", "message") || response.body
       rescue JSON::ParserError
         response.body
+      end
+
+      def handle_stream_response_status(response)
+        case response.status
+        when 200..299
+          # Success - streaming completed
+        when 400
+          raise InvalidRequestError.new(extract_error_message(response), status_code: 400)
+        when 401, 403
+          raise AuthenticationError.new("Invalid API key. Get one at https://makersuite.google.com/app/apikey", status_code: response.status)
+        when 404
+          raise InvalidRequestError.new("Resource not found. Check model name and endpoint.", status_code: 404)
+        when 429
+          raise RateLimitError.new(extract_error_message(response), status_code: 429)
+        when 500..599
+          raise ServerError.new(extract_error_message(response), status_code: response.status)
+        else
+          raise ApiError.new("Unexpected status code: #{response.status}", status_code: response.status)
+        end
       end
     end
   end

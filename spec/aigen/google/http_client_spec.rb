@@ -126,4 +126,97 @@ RSpec.describe Aigen::Google::HttpClient do
       end
     end
   end
+
+  describe "#post_stream" do
+    let(:path) { "models/gemini-pro:streamGenerateContent" }
+    let(:payload) { {contents: [{parts: [{text: "Hello"}]}]} }
+
+    context "when streaming is successful" do
+      it "yields progressive chunks to the block" do
+        chunks = [
+          {candidates: [{content: {parts: [{text: "Hello"}], role: "model"}}]},
+          {candidates: [{content: {parts: [{text: " world"}], role: "model"}}]},
+          {candidates: [{content: {parts: [{text: "!"}], role: "model"}}]}
+        ]
+
+        chunk_data = chunks.map { |c| "#{c.to_json}\n" }.join
+
+        stub_request(:post, "https://generativelanguage.googleapis.com/v1beta/#{path}")
+          .to_return(status: 200, body: chunk_data, headers: {"Content-Type" => "application/json"})
+
+        received_chunks = []
+        http_client.post_stream(path, payload) do |chunk|
+          received_chunks << chunk
+        end
+
+        expect(received_chunks.length).to eq(3)
+        expect(received_chunks[0]["candidates"][0]["content"]["parts"][0]["text"]).to eq("Hello")
+        expect(received_chunks[1]["candidates"][0]["content"]["parts"][0]["text"]).to eq(" world")
+        expect(received_chunks[2]["candidates"][0]["content"]["parts"][0]["text"]).to eq("!")
+      end
+
+      it "returns nil when block is given" do
+        chunk_data = "{\"candidates\": [{\"content\": {\"parts\": [{\"text\": \"Hi\"}]}}]}\n"
+
+        stub_request(:post, "https://generativelanguage.googleapis.com/v1beta/#{path}")
+          .to_return(status: 200, body: chunk_data)
+
+        result = http_client.post_stream(path, payload) { |chunk| }
+        expect(result).to be_nil
+      end
+
+      it "handles empty lines in chunked response" do
+        chunk_data = "{\"candidates\": [{\"content\": {\"parts\": [{\"text\": \"Hello\"}]}}]}\n\n{\"candidates\": [{\"content\": {\"parts\": [{\"text\": \"World\"}]}}]}\n"
+
+        stub_request(:post, "https://generativelanguage.googleapis.com/v1beta/#{path}")
+          .to_return(status: 200, body: chunk_data)
+
+        received_chunks = []
+        http_client.post_stream(path, payload) { |chunk| received_chunks << chunk }
+
+        expect(received_chunks.length).to eq(2)
+      end
+    end
+
+    context "when authentication fails" do
+      it "raises AuthenticationError for 401" do
+        stub_request(:post, "https://generativelanguage.googleapis.com/v1beta/#{path}")
+          .to_return(status: 401, body: {error: {message: "Invalid API key"}}.to_json)
+
+        expect {
+          http_client.post_stream(path, payload) { |chunk| }
+        }.to raise_error(Aigen::Google::AuthenticationError)
+      end
+    end
+
+    context "when rate limited" do
+      it "raises RateLimitError for 429" do
+        stub_request(:post, "https://generativelanguage.googleapis.com/v1beta/#{path}")
+          .to_return(status: 429, body: {error: {message: "Rate limit exceeded"}}.to_json)
+
+        expect {
+          http_client.post_stream(path, payload) { |chunk| }
+        }.to raise_error(Aigen::Google::RateLimitError)
+      end
+    end
+
+    context "when server error occurs" do
+      it "raises ServerError for 500" do
+        stub_request(:post, "https://generativelanguage.googleapis.com/v1beta/#{path}")
+          .to_return(status: 500, body: {error: {message: "Internal error"}}.to_json)
+
+        expect {
+          http_client.post_stream(path, payload) { |chunk| }
+        }.to raise_error(Aigen::Google::ServerError)
+      end
+    end
+
+    context "when no block is given" do
+      it "raises ArgumentError" do
+        expect {
+          http_client.post_stream(path, payload)
+        }.to raise_error(ArgumentError, /block required/)
+      end
+    end
+  end
 end

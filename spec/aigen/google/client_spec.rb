@@ -193,4 +193,119 @@ RSpec.describe Aigen::Google::Client do
       expect(WebMock).to have_requested(:post, /gemini-pro:generateContent/)
     end
   end
+
+  describe "#generate_content_stream" do
+    let(:client) { described_class.new(api_key: api_key) }
+    let(:prompt) { "Tell me a story" }
+
+    context "with block given" do
+      it "yields progressive chunks to the block" do
+        chunks = [
+          {candidates: [{content: {parts: [{text: "Once"}], role: "model"}}]},
+          {candidates: [{content: {parts: [{text: " upon"}], role: "model"}}]},
+          {candidates: [{content: {parts: [{text: " a time"}], role: "model"}}]}
+        ]
+        chunk_data = chunks.map { |c| "#{c.to_json}\n" }.join
+
+        stub_request(:post, "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:streamGenerateContent")
+          .to_return(status: 200, body: chunk_data)
+
+        received_texts = []
+        client.generate_content_stream(prompt: prompt) do |chunk|
+          received_texts << chunk["candidates"][0]["content"]["parts"][0]["text"]
+        end
+
+        expect(received_texts).to eq(["Once", " upon", " a time"])
+      end
+
+      it "returns nil when block is given" do
+        chunk_data = "{\"candidates\": [{\"content\": {\"parts\": [{\"text\": \"Hi\"}]}}]}\n"
+
+        stub_request(:post, "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:streamGenerateContent")
+          .to_return(status: 200, body: chunk_data)
+
+        result = client.generate_content_stream(prompt: prompt) { |chunk| }
+        expect(result).to be_nil
+      end
+
+      it "uses custom model when specified" do
+        chunk_data = "{\"candidates\": [{\"content\": {\"parts\": [{\"text\": \"Hi\"}]}}]}\n"
+
+        stub_request(:post, "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro-vision:streamGenerateContent")
+          .to_return(status: 200, body: chunk_data)
+
+        client.generate_content_stream(prompt: prompt, model: "gemini-pro-vision") { |chunk| }
+        expect(WebMock).to have_requested(:post, /gemini-pro-vision:streamGenerateContent/)
+      end
+
+      it "passes additional options to the API" do
+        chunk_data = "{\"candidates\": [{\"content\": {\"parts\": [{\"text\": \"Hi\"}]}}]}\n"
+
+        stub_request(:post, "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:streamGenerateContent")
+          .with(body: hash_including({
+            generationConfig: {temperature: 0.9}
+          }))
+          .to_return(status: 200, body: chunk_data)
+
+        client.generate_content_stream(prompt: prompt, generationConfig: {temperature: 0.9}) { |chunk| }
+      end
+    end
+
+    context "without block (Enumerator)" do
+      it "returns an Enumerator" do
+        chunk_data = "{\"candidates\": [{\"content\": {\"parts\": [{\"text\": \"Hi\"}]}}]}\n"
+
+        stub_request(:post, "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:streamGenerateContent")
+          .to_return(status: 200, body: chunk_data)
+
+        result = client.generate_content_stream(prompt: prompt)
+        expect(result).to be_a(Enumerator)
+      end
+
+      it "enumerates chunks when iterated" do
+        chunks = [
+          {candidates: [{content: {parts: [{text: "One"}], role: "model"}}]},
+          {candidates: [{content: {parts: [{text: "Two"}], role: "model"}}]}
+        ]
+        chunk_data = chunks.map { |c| "#{c.to_json}\n" }.join
+
+        stub_request(:post, "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:streamGenerateContent")
+          .to_return(status: 200, body: chunk_data)
+
+        enum = client.generate_content_stream(prompt: prompt)
+        collected = enum.to_a
+
+        expect(collected.length).to eq(2)
+        expect(collected[0]["candidates"][0]["content"]["parts"][0]["text"]).to eq("One")
+      end
+
+      it "supports lazy operations" do
+        chunks = [
+          {candidates: [{content: {parts: [{text: "One"}], role: "model"}}]},
+          {candidates: [{content: {parts: [{text: "Two"}], role: "model"}}]},
+          {candidates: [{content: {parts: [{text: "Three"}], role: "model"}}]}
+        ]
+        chunk_data = chunks.map { |c| "#{c.to_json}\n" }.join
+
+        stub_request(:post, "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:streamGenerateContent")
+          .to_return(status: 200, body: chunk_data)
+
+        enum = client.generate_content_stream(prompt: prompt)
+        first_two = enum.lazy.take(2).to_a
+
+        expect(first_two.length).to eq(2)
+      end
+    end
+
+    context "when API returns error" do
+      it "raises AuthenticationError for invalid API key" do
+        stub_request(:post, "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:streamGenerateContent")
+          .to_return(status: 401, body: {error: {message: "Invalid API key"}}.to_json)
+
+        expect {
+          client.generate_content_stream(prompt: prompt) { |chunk| }
+        }.to raise_error(Aigen::Google::AuthenticationError)
+      end
+    end
+  end
 end
