@@ -4,6 +4,7 @@ require_relative "google/version"
 require_relative "google/errors"
 require_relative "google/configuration"
 require_relative "google/http_client"
+require_relative "google/chat"
 require_relative "google/client"
 
 module Aigen

@@ -3,7 +3,7 @@
 module Aigen
   module Google
     class Client
-      attr_reader :config
+      attr_reader :config, :http_client
 
       def initialize(api_key: nil, model: nil, timeout: nil, **options)
         @config = build_configuration(api_key, model, timeout, options)
@@ -33,6 +33,14 @@ module Aigen
 
         endpoint = "models/#{model}:generateContent"
         @http_client.post(endpoint, payload)
+      end
+
+      def start_chat(history: [], model: nil, **options)
+        Chat.new(
+          client: self,
+          model: model || @config.default_model,
+          history: history
+        )
       end
 
       private

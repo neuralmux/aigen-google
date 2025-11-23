@@ -144,4 +144,53 @@ RSpec.describe Aigen::Google::Client do
       end
     end
   end
+
+  describe "#start_chat" do
+    let(:client) { described_class.new(api_key: api_key) }
+
+    it "returns a Chat instance" do
+      chat = client.start_chat
+      expect(chat).to be_a(Aigen::Google::Chat)
+    end
+
+    it "creates chat with empty history by default" do
+      chat = client.start_chat
+      expect(chat.history).to eq([])
+    end
+
+    it "creates chat with provided initial history" do
+      initial_history = [
+        {role: "user", parts: [{text: "Hello"}]},
+        {role: "model", parts: [{text: "Hi"}]}
+      ]
+      chat = client.start_chat(history: initial_history)
+      expect(chat.history).to eq(initial_history)
+    end
+
+    it "creates chat with custom model" do
+      chat = client.start_chat(model: "gemini-pro-vision")
+
+      stub_request(:post, "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro-vision:generateContent")
+        .to_return(
+          status: 200,
+          body: {candidates: [{content: {parts: [{text: "Response"}], role: "model"}}]}.to_json
+        )
+
+      chat.send_message("Test")
+      expect(WebMock).to have_requested(:post, /gemini-pro-vision:generateContent/)
+    end
+
+    it "creates chat with default model from client config" do
+      chat = client.start_chat
+
+      stub_request(:post, "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent")
+        .to_return(
+          status: 200,
+          body: {candidates: [{content: {parts: [{text: "Response"}], role: "model"}}]}.to_json
+        )
+
+      chat.send_message("Test")
+      expect(WebMock).to have_requested(:post, /gemini-pro:generateContent/)
+    end
+  end
 end
