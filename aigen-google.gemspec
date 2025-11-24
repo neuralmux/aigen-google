@@ -9,7 +9,7 @@ Gem::Specification.new do |spec|
   spec.email = ["ljuti@nmux.dev"]
 
   spec.summary = "Ruby SDK for Google Generative AI (Gemini API)"
-  spec.description = "A Ruby-native SDK for Google's Generative AI (Gemini) APIs, providing text generation, chat, streaming, and multimodal content support."
+  spec.description = "A Ruby-native SDK for Google's Generative AI (Gemini) APIs, providing text generation, chat, streaming, multimodal content, and image generation (Nano Banana) support."
   spec.homepage = "https://github.com/neuralmux/aigen-google"
   spec.license = "MIT"
   spec.required_ruby_version = ">= 3.1.0"
