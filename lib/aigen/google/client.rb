@@ -168,6 +168,50 @@ module Aigen
         end
       end
 
+      # Generates an image from a text prompt using Gemini image generation models.
+      # This is a convenience method that automatically sets response_modalities to ["TEXT", "IMAGE"]
+      # and returns an ImageResponse object for easy image extraction.
+      #
+      # @param prompt [String] the text description of the image to generate
+      # @param aspect_ratio [String, nil] optional aspect ratio ("1:1", "16:9", "9:16", "4:3", "3:4", "5:4", "4:5")
+      # @param size [String, nil] optional image size ("1K", "2K", "4K")
+      # @param model [String, nil] optional model name (defaults to client's model)
+      # @param options [Hash] additional options to pass to generate_content
+      #
+      # @return [Aigen::Google::ImageResponse] wrapper around the API response with convenience methods
+      #
+      # @raise [InvalidRequestError] if aspect_ratio or size are invalid
+      #
+      # @example Basic image generation
+      #   client = Aigen::Google::Client.new(model: "gemini-2.5-flash-image")
+      #   response = client.generate_image("A serene mountain landscape")
+      #   response.save("landscape.png") if response.success?
+      #
+      # @example With size and aspect ratio
+      #   response = client.generate_image(
+      #     "A futuristic cityscape",
+      #     aspect_ratio: "16:9",
+      #     size: "2K"
+      #   )
+      #   if response.success?
+      #     puts response.text
+      #     response.save("city.png")
+      #   else
+      #     puts "Failed: #{response.failure_message}"
+      #   end
+      def generate_image(prompt, aspect_ratio: nil, size: nil, model: nil, **options)
+        response = generate_content(
+          prompt: prompt,
+          model: model,
+          response_modalities: ["TEXT", "IMAGE"],
+          aspect_ratio: aspect_ratio,
+          image_size: size,
+          **options
+        )
+
+        ImageResponse.new(response)
+      end
+
       def start_chat(history: [], model: nil, **options)
         Chat.new(
           client: self,

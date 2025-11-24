@@ -7,6 +7,7 @@ require_relative "google/content"
 require_relative "google/generation_config"
 require_relative "google/safety_settings"
 require_relative "google/http_client"
+require_relative "google/image_response"
 require_relative "google/chat"
 require_relative "google/client"
 

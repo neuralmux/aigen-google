@@ -545,4 +545,96 @@ RSpec.describe Aigen::Google::Client do
       end
     end
   end
+
+  describe "#generate_image" do
+    let(:client) { described_class.new(api_key: "test-key") }
+
+    let(:image_response_body) do
+      {
+        "candidates" => [
+          {
+            "content" => {
+              "parts" => [
+                {"text" => "A beautiful sunset"},
+                {
+                  "inlineData" => {
+                    "mimeType" => "image/png",
+                    "data" => "aGVsbG8gd29ybGQ="  # "hello world" in base64
+                  }
+                }
+              ]
+            },
+            "finishReason" => "STOP"
+          }
+        ]
+      }
+    end
+
+    it "generates an image with simple prompt" do
+      stub = stub_request(:post, "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent")
+        .with { |req|
+          body = JSON.parse(req.body)
+          body["contents"][0]["parts"][0]["text"] == "A cute puppy" &&
+            body["generationConfig"]["responseModalities"] == ["TEXT", "IMAGE"]
+        }
+        .to_return(status: 200, body: image_response_body.to_json)
+
+      response = client.generate_image("A cute puppy")
+
+      expect(stub).to have_been_requested
+      expect(response).to be_a(Aigen::Google::ImageResponse)
+    end
+
+    it "accepts aspect_ratio option" do
+      stub = stub_request(:post, "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent")
+        .with { |req|
+          body = JSON.parse(req.body)
+          config = body["generationConfig"]
+          config["imageConfig"]["aspectRatio"] == "16:9"
+        }
+        .to_return(status: 200, body: image_response_body.to_json)
+
+      client.generate_image("A landscape", aspect_ratio: "16:9")
+
+      expect(stub).to have_been_requested
+    end
+
+    it "accepts size option" do
+      stub = stub_request(:post, "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent")
+        .with { |req|
+          body = JSON.parse(req.body)
+          config = body["generationConfig"]
+          config["imageConfig"]["imageSize"] == "2K"
+        }
+        .to_return(status: 200, body: image_response_body.to_json)
+
+      client.generate_image("A mountain", size: "2K")
+
+      expect(stub).to have_been_requested
+    end
+
+    it "accepts both aspect_ratio and size" do
+      stub = stub_request(:post, "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent")
+        .with { |req|
+          body = JSON.parse(req.body)
+          config = body["generationConfig"]
+          config["imageConfig"]["aspectRatio"] == "16:9" &&
+            config["imageConfig"]["imageSize"] == "2K"
+        }
+        .to_return(status: 200, body: image_response_body.to_json)
+
+      client.generate_image("A landscape", aspect_ratio: "16:9", size: "2K")
+
+      expect(stub).to have_been_requested
+    end
+
+    it "uses custom model when specified" do
+      stub = stub_request(:post, "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image:generateContent")
+        .to_return(status: 200, body: image_response_body.to_json)
+
+      client.generate_image("A puppy", model: "gemini-2.5-flash-image")
+
+      expect(stub).to have_been_requested
+    end
+  end
 end

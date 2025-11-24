@@ -206,6 +206,73 @@ response = client.generate_content(
 )
 ```
 
+### Image Generation (Nano Banana 🍌)
+
+Generate images using Gemini's image generation models (nicknamed "Nano Banana"):
+
+```ruby
+# Use an image generation model
+client = Aigen::Google::Client.new(model: 'gemini-2.5-flash-image')
+
+# Simple image generation
+response = client.generate_image("A serene mountain landscape at sunset")
+
+if response.success?
+  response.save("landscape.png")
+  puts "Image saved!"
+  puts "Description: #{response.text}"
+else
+  puts "Generation failed: #{response.failure_message}"
+end
+```
+
+#### With Size and Aspect Ratio
+
+```ruby
+response = client.generate_image(
+  "A futuristic cityscape with flying cars",
+  aspect_ratio: "16:9",  # Options: "1:1", "16:9", "9:16", "4:3", "3:4", "5:4", "4:5"
+  size: "2K"             # Options: "1K", "2K", "4K"
+)
+
+response.save("city.png") if response.success?
+```
+
+#### ImageResponse Helper Methods
+
+The `generate_image` method returns an `ImageResponse` object with convenient helpers:
+
+```ruby
+response = client.generate_image("A cute puppy")
+
+# Check success
+response.success?              # => true/false
+response.has_image?            # => true/false
+
+# Access image data
+response.image_data            # => Binary image data
+response.mime_type             # => "image/png"
+response.text                  # => Text description
+
+# Save image
+response.save("output.png")
+
+# Handle failures
+unless response.success?
+  puts response.failure_reason   # => "IMAGE_OTHER", "SAFETY", etc.
+  puts response.failure_message  # => Detailed error message
+end
+
+# Access raw response
+response.raw_response           # => Full API response hash
+```
+
+#### Available Models
+
+- `gemini-2.5-flash-image` - Standard image generation (up to 2K)
+- `gemini-2.0-flash-exp` - Experimental with native image generation
+- `gemini-3-pro-image-preview` - Preview with 4K support
+
 ## Error Handling
 
 The SDK provides comprehensive error handling with automatic retries:
