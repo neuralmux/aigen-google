@@ -308,4 +308,145 @@ RSpec.describe Aigen::Google::Client do
       end
     end
   end
+
+  describe "multimodal content support" do
+    let(:client) { described_class.new(api_key: api_key) }
+    let(:response_body) do
+      {
+        candidates: [
+          {
+            content: {
+              parts: [{text: "This is a multimodal response"}],
+              role: "model"
+            }
+          }
+        ]
+      }
+    end
+
+    context "with contents parameter" do
+      it "sends multimodal request with text and image" do
+        text_content = Aigen::Google::Content.text("What is in this image?")
+        image_content = Aigen::Google::Content.image(data: "base64data", mime_type: "image/jpeg")
+
+        stub = stub_request(:post, "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent")
+          .with { |req|
+            body = JSON.parse(req.body)
+            body["contents"].is_a?(Array) &&
+              body["contents"].length == 2 &&
+              body["contents"][0]["parts"][0]["text"] == "What is in this image?" &&
+              body["contents"][1]["parts"][0]["inline_data"]["mime_type"] == "image/jpeg"
+          }
+          .to_return(status: 200, body: response_body.to_json)
+
+        client.generate_content(contents: [text_content.to_h, image_content.to_h])
+
+        expect(stub).to have_been_requested
+      end
+    end
+
+    context "with temperature parameter" do
+      it "includes generationConfig in request" do
+        stub = stub_request(:post, "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent")
+          .with { |req|
+            body = JSON.parse(req.body)
+            body["generationConfig"] &&
+              (body["generationConfig"]["temperature"] - 0.5).abs < 0.001
+          }
+          .to_return(status: 200, body: response_body.to_json)
+
+        client.generate_content(prompt: "Hello", temperature: 0.5)
+
+        expect(stub).to have_been_requested
+      end
+    end
+
+    context "with all generation config parameters" do
+      it "includes all parameters with camelCase keys" do
+        stub = stub_request(:post, "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent")
+          .with { |req|
+            body = JSON.parse(req.body)
+            config = body["generationConfig"]
+            (config["temperature"] - 0.7).abs < 0.001 &&
+              (config["topP"] - 0.9).abs < 0.001 &&
+              config["topK"] == 40 &&
+              config["maxOutputTokens"] == 1024
+          }
+          .to_return(status: 200, body: response_body.to_json)
+
+        client.generate_content(
+          prompt: "Hello",
+          temperature: 0.7,
+          top_p: 0.9,
+          top_k: 40,
+          max_output_tokens: 1024
+        )
+
+        expect(stub).to have_been_requested
+      end
+    end
+
+    context "with safety_settings parameter" do
+      it "includes safetySettings in request" do
+        settings = [
+          {category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_MEDIUM_AND_ABOVE"}
+        ]
+
+        stub = stub_request(:post, "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent")
+          .with { |req|
+            body = JSON.parse(req.body)
+            body["safetySettings"].is_a?(Array) &&
+              body["safetySettings"].length == 1 &&
+              body["safetySettings"][0]["category"] == "HARM_CATEGORY_HATE_SPEECH" &&
+              body["safetySettings"][0]["threshold"] == "BLOCK_MEDIUM_AND_ABOVE"
+          }
+          .to_return(status: 200, body: response_body.to_json)
+
+        client.generate_content(prompt: "Hello", safety_settings: settings)
+
+        expect(stub).to have_been_requested
+      end
+    end
+
+    context "backward compatibility" do
+      it "still accepts simple prompt parameter" do
+        stub = stub_request(:post, "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent")
+          .with { |req|
+            body = JSON.parse(req.body)
+            body["contents"][0]["parts"][0]["text"] == "Hello"
+          }
+          .to_return(status: 200, body: response_body.to_json)
+
+        client.generate_content(prompt: "Hello")
+
+        expect(stub).to have_been_requested
+      end
+    end
+
+    context "validation" do
+      it "raises InvalidRequestError for invalid temperature before API call" do
+        expect {
+          client.generate_content(prompt: "Hello", temperature: 1.5)
+        }.to raise_error(Aigen::Google::InvalidRequestError, /temperature must be between 0.0 and 1.0/)
+      end
+
+      it "raises InvalidRequestError for invalid top_p" do
+        expect {
+          client.generate_content(prompt: "Hello", top_p: 1.5)
+        }.to raise_error(Aigen::Google::InvalidRequestError, /top_p must be between 0.0 and 1.0/)
+      end
+
+      it "raises InvalidRequestError for invalid top_k" do
+        expect {
+          client.generate_content(prompt: "Hello", top_k: 0)
+        }.to raise_error(Aigen::Google::InvalidRequestError, /top_k must be greater than 0/)
+      end
+
+      it "raises InvalidRequestError for invalid max_output_tokens" do
+        expect {
+          client.generate_content(prompt: "Hello", max_output_tokens: 0)
+        }.to raise_error(Aigen::Google::InvalidRequestError, /max_output_tokens must be greater than 0/)
+      end
+    end
+  end
 end

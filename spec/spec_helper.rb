@@ -1,5 +1,15 @@
 # frozen_string_literal: true
 
+# Coverage tracking (run with: COVERAGE=true bundle exec rspec)
+if ENV["COVERAGE"]
+  require "simplecov"
+  SimpleCov.start do
+    add_filter "/spec/"
+    add_filter "/vendor/"
+    minimum_coverage 90
+  end
+end
+
 require "aigen/google"
 require "webmock/rspec"
 # require "support/vcr"  # Disabled until we record real API interactions

@@ -58,7 +58,9 @@ module Aigen
       # Automatically includes conversation history for context and updates
       # history with both the user message and model response.
       #
-      # @param message [String] the message text to send
+      # Accepts both simple String messages and Content objects for multimodal support.
+      #
+      # @param message [String, Content] the message text or Content object to send
       # @param options [Hash] additional options to pass to the API (e.g., generationConfig)
       #
       # @return [Hash] the API response containing the model's reply
@@ -70,9 +72,16 @@ module Aigen
       # @raise [Aigen::Google::TimeoutError] if the request times out
       # @raise [ArgumentError] if message is nil or empty
       #
-      # @example Send a message
+      # @example Send a simple text message
       #   response = chat.send_message("What is the weather today?")
       #   text = response["candidates"][0]["content"]["parts"][0]["text"]
+      #
+      # @example Send multimodal content (text + image)
+      #   content = Aigen::Google::Content.new([
+      #     {text: "What is in this image?"},
+      #     {inline_data: {mime_type: "image/jpeg", data: base64_data}}
+      #   ])
+      #   response = chat.send_message(content)
       #
       # @example Send message with generation config
       #   response = chat.send_message(
@@ -85,10 +94,17 @@ module Aigen
         raise ArgumentError, "message cannot be empty" if message.respond_to?(:empty?) && message.empty?
 
         # Build user message part
-        user_message = {
-          role: "user",
-          parts: [{text: message}]
-        }
+        # Handle both String (simple text) and Content objects (multimodal)
+        user_message = if message.is_a?(Content)
+          # Content object - use its to_h serialization and add role
+          message.to_h.merge(role: "user")
+        else
+          # String - wrap in standard format
+          {
+            role: "user",
+            parts: [{text: message}]
+          }
+        end
 
         # Build payload with full history + new message
         payload = {

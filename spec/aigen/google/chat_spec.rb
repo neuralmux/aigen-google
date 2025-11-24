@@ -366,4 +366,71 @@ RSpec.describe Aigen::Google::Chat do
       end
     end
   end
+
+  describe "multimodal content support" do
+    let(:http_client) { instance_double(Aigen::Google::HttpClient) }
+    let(:config) { instance_double(Aigen::Google::Configuration, default_model: "gemini-pro") }
+    let(:client) do
+      instance_double(Aigen::Google::Client,
+        http_client: http_client,
+        config: config)
+    end
+    let(:chat) { described_class.new(client: client) }
+
+    context "with Content object" do
+      it "sends multimodal message with Content object" do
+        content = Aigen::Google::Content.text("Hello")
+        response_body = {
+          "candidates" => [
+            {"content" => {"role" => "model", "parts" => [{"text" => "Hi there"}]}}
+          ]
+        }
+
+        expect(http_client).to receive(:post).with(
+          "models/gemini-pro:generateContent",
+          hash_including(contents: array_including(
+            hash_including(parts: [{text: "Hello"}], role: "user")
+          ))
+        ).and_return(response_body)
+
+        chat.send_message(content)
+      end
+
+      it "preserves Content structure in history" do
+        content = Aigen::Google::Content.text("What is in this image?")
+        response_body = {
+          "candidates" => [
+            {"content" => {"role" => "model", "parts" => [{"text" => "I see a cat"}]}}
+          ]
+        }
+
+        allow(http_client).to receive(:post).and_return(response_body)
+
+        chat.send_message(content)
+
+        expect(chat.history.length).to eq(2)
+        expect(chat.history[0]).to eq(content.to_h.merge(role: "user"))
+        expect(chat.history[1][:role]).to eq("model")
+      end
+    end
+
+    context "backward compatibility with String" do
+      it "still accepts simple string messages" do
+        response_body = {
+          "candidates" => [
+            {"content" => {"role" => "model", "parts" => [{"text" => "Hi there"}]}}
+          ]
+        }
+
+        expect(http_client).to receive(:post).with(
+          "models/gemini-pro:generateContent",
+          hash_including(contents: array_including(
+            hash_including(role: "user", parts: [{text: "Hello"}])
+          ))
+        ).and_return(response_body)
+
+        chat.send_message("Hello")
+      end
+    end
+  end
 end
