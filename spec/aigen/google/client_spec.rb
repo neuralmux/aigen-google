@@ -448,5 +448,101 @@ RSpec.describe Aigen::Google::Client do
         }.to raise_error(Aigen::Google::InvalidRequestError, /max_output_tokens must be greater than 0/)
       end
     end
+
+    context "image generation parameters" do
+      it "includes responseModalities in request" do
+        stub = stub_request(:post, "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent")
+          .with { |req|
+            body = JSON.parse(req.body)
+            body["generationConfig"] &&
+              body["generationConfig"]["responseModalities"] == ["TEXT", "IMAGE"]
+          }
+          .to_return(status: 200, body: response_body.to_json)
+
+        client.generate_content(
+          prompt: "Generate an image",
+          response_modalities: ["TEXT", "IMAGE"]
+        )
+
+        expect(stub).to have_been_requested
+      end
+
+      it "includes aspectRatio in imageConfig" do
+        stub = stub_request(:post, "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent")
+          .with { |req|
+            body = JSON.parse(req.body)
+            body["generationConfig"] &&
+              body["generationConfig"]["imageConfig"] &&
+              body["generationConfig"]["imageConfig"]["aspectRatio"] == "16:9"
+          }
+          .to_return(status: 200, body: response_body.to_json)
+
+        client.generate_content(
+          prompt: "Generate an image",
+          aspect_ratio: "16:9"
+        )
+
+        expect(stub).to have_been_requested
+      end
+
+      it "includes imageSize in imageConfig" do
+        stub = stub_request(:post, "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent")
+          .with { |req|
+            body = JSON.parse(req.body)
+            body["generationConfig"] &&
+              body["generationConfig"]["imageConfig"] &&
+              body["generationConfig"]["imageConfig"]["imageSize"] == "2K"
+          }
+          .to_return(status: 200, body: response_body.to_json)
+
+        client.generate_content(
+          prompt: "Generate an image",
+          image_size: "2K"
+        )
+
+        expect(stub).to have_been_requested
+      end
+
+      it "includes all image generation parameters with proper nesting" do
+        stub = stub_request(:post, "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent")
+          .with { |req|
+            body = JSON.parse(req.body)
+            config = body["generationConfig"]
+            image_config = config["imageConfig"]
+            config["responseModalities"] == ["TEXT", "IMAGE"] &&
+              image_config &&
+              image_config["aspectRatio"] == "16:9" &&
+              image_config["imageSize"] == "2K"
+          }
+          .to_return(status: 200, body: response_body.to_json)
+
+        client.generate_content(
+          prompt: "Generate a landscape image",
+          response_modalities: ["TEXT", "IMAGE"],
+          aspect_ratio: "16:9",
+          image_size: "2K"
+        )
+
+        expect(stub).to have_been_requested
+      end
+
+      it "validates response_modalities" do
+        expect {
+          client.generate_content(prompt: "Hello", response_modalities: ["INVALID"])
+        }.to raise_error(Aigen::Google::InvalidRequestError, /response_modalities must only contain TEXT or IMAGE/)
+      end
+
+      it "validates aspect_ratio" do
+        expect {
+          client.generate_content(prompt: "Hello", aspect_ratio: "invalid")
+        }.to raise_error(Aigen::Google::InvalidRequestError, /aspect_ratio must be one of/)
+      end
+
+      it "validates image_size" do
+        expect {
+          client.generate_content(prompt: "Hello", image_size: "8K")
+        }.to raise_error(Aigen::Google::InvalidRequestError, /image_size must be one of/)
+      end
+    end
   end
 end

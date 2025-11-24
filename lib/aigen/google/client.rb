@@ -49,17 +49,28 @@ module Aigen
       #   text = Aigen::Google::Content.text("What is in this image?")
       #   image = Aigen::Google::Content.image(data: base64_data, mime_type: "image/jpeg")
       #   response = client.generate_content(contents: [text.to_h, image.to_h])
-      def generate_content(prompt: nil, contents: nil, model: nil, temperature: nil, top_p: nil, top_k: nil, max_output_tokens: nil, safety_settings: nil, **options)
+      #
+      # @example Image generation (Nano Banana)
+      #   response = client.generate_content(
+      #     prompt: "A serene mountain landscape",
+      #     response_modalities: ["TEXT", "IMAGE"],
+      #     aspect_ratio: "16:9",
+      #     image_size: "2K"
+      #   )
+      def generate_content(prompt: nil, contents: nil, model: nil, temperature: nil, top_p: nil, top_k: nil, max_output_tokens: nil, response_modalities: nil, aspect_ratio: nil, image_size: nil, safety_settings: nil, **options)
         model ||= @config.default_model
 
         # Build generation config if parameters provided (validates before API call)
         gen_config = nil
-        if temperature || top_p || top_k || max_output_tokens
+        if temperature || top_p || top_k || max_output_tokens || response_modalities || aspect_ratio || image_size
           gen_config = GenerationConfig.new(
             temperature: temperature,
             top_p: top_p,
             top_k: top_k,
-            max_output_tokens: max_output_tokens
+            max_output_tokens: max_output_tokens,
+            response_modalities: response_modalities,
+            aspect_ratio: aspect_ratio,
+            image_size: image_size
           )
         end
 
