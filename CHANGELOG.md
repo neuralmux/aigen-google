@@ -16,7 +16,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Multi-turn chat with conversation history (`Client#start_chat`, `Chat#send_message`)
 - Streaming responses with progressive chunk delivery (`Client#generate_content_stream`, `Chat#send_message_stream`)
 - Multimodal content support (text + images via `Content` class)
-- Generation configuration (`GenerationConfig` with temperature, top_p, top_k, max_output_tokens)
+- **Image generation (Nano Banana 🍌)** with `Client#generate_image` and `ImageResponse` helper
+- Generation configuration (`GenerationConfig` with temperature, top_p, top_k, max_output_tokens, response_modalities, aspect_ratio, image_size)
 - Safety settings with sensible defaults (`SafetySettings` with harm categories and thresholds)
 
 **Configuration:**
@@ -38,11 +39,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Ruby 3.1+ support with modern idioms
 - Comprehensive test suite (137 examples, >= 90% coverage)
 
+**Image Generation:**
+- `Client#generate_image` convenience method for simple image generation
+- `ImageResponse` helper class with methods: `success?`, `has_image?`, `text`, `image_data`, `mime_type`, `save(path)`, `failure_reason`, `failure_message`
+- Support for aspect ratios: "1:1", "16:9", "9:16", "4:3", "3:4", "5:4", "4:5"
+- Support for image sizes: "1K", "2K", "4K"
+- Compatible with Gemini 2.5 Flash Image and Gemini 3 Pro Image models
+
 **Testing & Quality:**
-- RSpec test suite with 137 passing examples
-- SimpleCov integration for coverage tracking
+- RSpec test suite with 186 passing examples
+- 97.59% code coverage with SimpleCov
 - WebMock for HTTP stubbing in tests
-- StandardRB linter configuration
+- StandardRB linter configuration (0 offenses)
 - Continuous integration ready
 
 ### Technical Details
